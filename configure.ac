@@ -59,6 +59,7 @@ AC_CANONICAL_HOST
 os_win32="false"
 os_cygwin="false"
 os_qnx="false"
+os_sunos="false"
 case "${host_os}" in
       *mingw32*)
     os_win32="true"
@@ -68,6 +69,9 @@ case "${host_os}" in
   ;;
       *cygwin*)
     os_cygwin="true"
+  ;;
+      *solaris*)
+    os_sunos="true"
   ;;
 esac
 AM_CONDITIONAL(OS_WIN32, test "$os_win32" = "true")
@@ -85,6 +89,7 @@ AC_CHECK_HEADERS([ \
     linux/serial.h \
     netdb.h \
     netinet/in.h \
+    netinet/ip.h \
     netinet/tcp.h \
     sys/ioctl.h \
     sys/params.h \
@@ -104,7 +109,7 @@ AC_CHECK_DECLS([__CYGWIN__])
 AC_SEARCH_LIBS(accept, network socket)
 
 # Checks for library functions.
-AC_CHECK_FUNCS([accept4 getaddrinfo gettimeofday inet_pton inet_ntop select socket strerror strlcpy])
+AC_CHECK_FUNCS([accept4 gai_strerror getaddrinfo gettimeofday inet_pton inet_ntop select socket strerror strlcpy])
 
 # Required for MinGW with GCC v4.8.1 on Win7
 AC_DEFINE(WINVER, 0x0501, _)
@@ -132,6 +137,11 @@ if test "$os_cygwin" = "false"; then
     fi
 fi
 
+if test "$os_sunos" = "true"; then
+    LIBS="$LIBS -lnsl -lsocket"
+    AC_SUBST(LIBS)
+fi
+
 # Check for RS485 support (Linux kernel version 2.6.28+)
 AC_CHECK_DECLS([TIOCSRS485], [], [], [[#include <sys/ioctl.h>]])
 # Check for RTS flags
@@ -146,6 +156,23 @@ my_CFLAGS="-Wall \
 -Wformat-security"
 AC_SUBST([my_CFLAGS])
 
+# Check for libusb-1.0
+AC_ARG_WITH([libusb],
+    AS_HELP_STRING([--with-libusb],[Use libusb-1.0 for USB support (default is no)]),,
+    [with_libusb=no])
+
+if test "x$with_libusb" != "xno"; then
+    AC_CHECK_LIB(usb-1.0, libusb_init, [
+        LIBUSB_LIBS="-lusb-1.0"
+        AC_DEFINE(HAVE_LIBUSB, 1, [defined if libusb is available])
+        have_libusb=yes
+    ], [
+        AC_MSG_ERROR(["libusb-1.0 not found. Please install libusb-1.0."])
+    ])
+fi
+AC_SUBST(LIBUSB_LIBS)
+AM_CONDITIONAL(WITH_LIBUSB, [test x"${have_libusb}" = x"yes"])
+
 # Build options
 AC_ARG_ENABLE(tests,
 	AS_HELP_STRING([--disable-tests],
@@ -153,7 +180,7 @@ AC_ARG_ENABLE(tests,
 	[enable_tests=yes])
 AM_CONDITIONAL(BUILD_TESTS, [test $enable_tests != no])
 
-AC_CONFIG_HEADERS([config.h tests/unit-test.h])
+AC_CONFIG_HEADERS([config.h tests/unit-test.h src/modbus-config.h])
 AC_CONFIG_FILES([
         Makefile
         src/Makefile
